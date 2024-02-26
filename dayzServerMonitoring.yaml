@@ -1,0 +1,51 @@
+openapi: "3.0.0"
+info:
+  version: 1.0.0
+  title: dayzServerMonitoring
+paths:
+  /api/ban:
+    get:
+      summary: Get a list of all banned accounts
+      parameters:
+        - in: query
+          name: showComment
+          schema:
+            type: boolean
+          description: Toggle if the response should contain commented out data or not
+      responses:
+        '200':
+          description: Success
+    post:
+      summary: Create a new entry on the banned accounts list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user:
+                  type: string
+                  example: test
+                comment:
+                  type: string
+                  example: comment test
+                time:
+                  type: string
+                  enum:
+                    - 1d
+                    - 2d
+                    - 3d
+                    - 1w
+                    - 2w
+                    - 3w
+                    - 1m
+                    - 2m
+                    - 3m
+                    - 1y
+                    - 2y
+                    - 3y
+                  example: 1w
+      responses:
+        '200':
+          description: Success
