@@ -3,8 +3,11 @@ from threading import Thread
 from flask_httpauth import HTTPBasicAuth
 from flask_httpauth import HTTPTokenAuth
 
+from functools import wraps
+
 
 import secrets
+import string
 import time
 import json
 import csv
@@ -38,10 +41,14 @@ token_auth = HTTPTokenAuth(scheme='Bearer')
 
 
 tokens = {}
-
+last_attempts= {}
 # Salted passwords stored in a file
 PASSWORD_FILE = "passwords.txt"
+# Define the retry timer duration (in seconds)
+RETRY_TIMER = 5 * 60  # 5 minutes
 
+# Store the last failed authentication attempt time
+last_failed_auth_time = {}
 
 # Load passwords from file
 def load_passwords():
@@ -56,18 +63,40 @@ def load_passwords():
 @auth.verify_password
 def verify_password(username, password):
     passwords = load_passwords()
-
+    authenticated = False
     if username in passwords:
         salt, password_hash = passwords[username]
-        return password_hash == hashlib.sha256((password + salt).encode()).hexdigest()
+        authenticated = password_hash == hashlib.sha256((password + salt).encode()).hexdigest()
+        if not authenticated:
+            global last_failed_auth_time
+            last_failed_auth_time[request.remote_addr + ":"+  request.authorization.username] = time.time()
+            return False
+        else:
+            return True
     return False
+
+def bruteforceChecker(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        global last_failed_auth_time
+        id = request.remote_addr + ":"+  (request.authorization.username or "132456")
+        # If the last failed authentication attempt occurred more than 5 minutes ago
+        if not (id in last_failed_auth_time): 
+            return func(*args, **kwargs)
+        if time.time() - last_failed_auth_time[id] > RETRY_TIMER:
+            del last_failed_auth_time[id]
+            return func(*args, **kwargs)
+        # Otherwise, return a response indicating the retry timer is active
+        return Response('Retry timer active. Please wait.', status=429)
+    return wrapper
 
 # Issue a token after successful basic authentication
 @app.route('/api/authenticate', methods=['POST'])
+@bruteforceChecker
 @auth.login_required
 def authenticate():
     username = request.authorization.username
-    token = secrets.token_hex(16)
+    token = ''.join(secrets.choice(string.ascii_letters + string.digits) for x in range(512))
     tokens[token] = ({
             "user":username,
             "created": time.time()
@@ -78,6 +107,7 @@ def authenticate():
 
 # Protect other APIs with token authentication
 @app.route('/api/protected', methods=['GET'])
+@bruteforceChecker
 @token_auth.login_required
 def protected():
     if is_token_expired(request.headers.get('Authorization').split()[1]):
@@ -88,10 +118,11 @@ def protected():
 def verify_token(token):
     if token in tokens:
         return tokens[token]
+    global last_failed_auth_time
+    last_failed_auth_time[request.remote_addr + ":132456"] = time.time()
 
 # Check if a token has expired
 def is_token_expired(token):
-    print("checking if token is expired")
     if time.time() - tokens[token]['created'] > 30 * 60:
         return True
     else:
@@ -104,6 +135,7 @@ def is_token_expired(token):
 
 # ban endpoints
 @app.route('/api/unban', methods=['GET'])
+@bruteforceChecker
 @token_auth.login_required
 async def unban_list():
     if is_token_expired(request.headers.get('Authorization').split()[1]):
@@ -115,6 +147,7 @@ async def unban_list():
         return Response(json.dumps(ban_flow.unban(uuid.uuid4())), mimetype='application/json')
 
 @app.route('/api/unban/<id>', methods=['GET'])
+@bruteforceChecker
 @token_auth.login_required
 async def get_unbannedPersonById(id):
     if is_token_expired(request.headers.get('Authorization').split()[1]):
@@ -127,6 +160,7 @@ async def get_unbannedPersonById(id):
     
 
 @app.route('/api/ban', methods=['GET'])
+@bruteforceChecker
 @token_auth.login_required
 async def get_ban_list():
     if is_token_expired(request.headers.get('Authorization').split()[1]):
@@ -140,21 +174,36 @@ async def get_ban_list():
         return Response(json.dumps([person.__dict__ for person in ban_flow.getBanList(uuid.uuid4(),filtered)]), mimetype='application/json')
 
 @app.route('/api/ban/transform', methods=['GET'])
+@bruteforceChecker
+@token_auth.login_required
 def create_transformed_ban_list():
+    if is_token_expired(request.headers.get('Authorization').split()[1]):
+        return jsonify({'message': 'Token expired'}), 401
+
     if request.headers.get('X-Correlation-ID'):
         return Response(json.dumps(ban_flow.transform(request.headers.get('X-Correlation-ID'))), mimetype='application/json')
     else:
         return Response(json.dumps(ban_flow.transform(uuid.uuid4())), mimetype='application/json')
 
 @app.route('/api/ban', methods=['POST'])
+@bruteforceChecker
+@token_auth.login_required
 def post_ban_list():
+    if is_token_expired(request.headers.get('Authorization').split()[1]):
+        return jsonify({'message': 'Token expired'}), 401
+
     data = request.get_json()
 
     return Response(json.dumps( {"message" :'banned person inserted with id:' + str((ban_flow.ban(uuid.uuid4(),data)).uniqueid)}), mimetype='application/json')
 
 
 @app.route('/api/ban/<id>', methods=['GET'])
+@bruteforceChecker
+@token_auth.login_required
 def get_bannedperson_by_id(id):
+    if is_token_expired(request.headers.get('Authorization').split()[1]):
+        return jsonify({'message': 'Token expired'}), 401
+
     with open('DayZServerBackup20220728/ban.csv', 'r') as file:
         reader = csv.DictReader(file)
         bannedPeople= []
@@ -169,7 +218,12 @@ def get_bannedperson_by_id(id):
 
 
 @app.route('/api/ban/<id>', methods=['PATCH'])
+@bruteforceChecker
+@token_auth.login_required
 def patch_bannedperson_by_id(id):
+    if is_token_expired(request.headers.get('Authorization').split()[1]):
+        return jsonify({'message': 'Token expired'}), 401
+
     data = request.get_json()
     rows = []
     bannedPersons = []
@@ -204,7 +258,7 @@ def _sendAlert(channel, message) -> None:
     asyncio.run(post_alert(data.get('channel', ''), data.get('message', '')))
 
 
-
+'''
 # Server status endpoints
 server_status = {
     'status': 'stopped'
@@ -237,7 +291,7 @@ def update_server():
     # Code to update the DayZ server
     return jsonify({'message': 'Server updated successfully'})
 
-
+'''
 # server settings endpoints
 
 '''
