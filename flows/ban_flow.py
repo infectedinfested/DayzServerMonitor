@@ -4,7 +4,8 @@ import csv
 #local imports
 import scheduledJob
 from classes import BannedPerson
-from common import strtobool, create_ban_file,error
+from common import strtobool, create_ban_file
+from CustomErrors import error
 
 def unban(uuid,id = 0):
     if id == 0:

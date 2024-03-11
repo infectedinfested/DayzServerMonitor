@@ -234,7 +234,7 @@ def fill_statistics(statistic, file,fileName):
     #if not statistic.isEmpty():
     #    statistic.write_data()
     
-def main():
+def run():
     files_in_dir = os.listdir(log_dir)
 
     filtered_files = list(filter(filter_by_date, files_in_dir))
@@ -253,14 +253,5 @@ def main():
 
     print("handled " + str(len(filtered_files)) + " logsFiles")
     #print(result)
-    
-        
-
-
-            
-
-                
-if __name__ == '__main__':
-  main()
-
+           
 
