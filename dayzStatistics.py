@@ -43,7 +43,9 @@ def read_file(statistic, file_name):
     if not statistic.isEmpty():
         statistic.write_data()      
 
-def parse_log_line(file_name,line):
+def parse_log_line(line):
+
+    
     splitted_log = (line.replace('|',' ').replace('   P',' | p').replace('>) ', '>)| ').replace('] h', ']| h').replace('] k', ']| k').split('|'))
     if len(splitted_log)>2:
         #try:
@@ -79,7 +81,6 @@ def parse_log_line(file_name,line):
                 hit_by_what = log_data
                 location = ""
                 weapon_used = ""
-                check_list = ["Sawed-off","Nailed" ,"SK","Baseball", "MK"]
                 #for string in check_list:
                 #    # Check if the current string exists in the given string
                 #    if string in line:
@@ -212,7 +213,7 @@ def fill_statistics(statistic, file,fileName):
     last_player_line = []
     for log_line in file:
             
-            logData = parse_log_line(fileName,log_line)
+            logData = parse_log_line(log_line)
             
             
             if logData:

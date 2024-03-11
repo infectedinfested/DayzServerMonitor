@@ -48,8 +48,16 @@ class BannedPerson:
     def __str__(self):
         return f"Id: {self.uniqueid}, active: {self.active}, steamId: {self.steamid}, reason: {self.reason}, time: {self.time},startDate: {self.startDate}, comment: {self.comment}"
     
+class Log:
+    location = ""
+    def __init__(self,  location):
+        self.location = location
 
-
+    def write(self, string):
+        with open(self.location, "a" ) as file:
+            current_time = datetime.now().strftime('%H:%M:%S')
+            file.write(str(current_time) + " | " + string)
+        return 'write successfull'  
 
 
 
@@ -158,14 +166,18 @@ class Statistics:
     def PlayersKilledBy(self, value):
         self._data["PlayersKilledBy"] = value
         #self._write_data(self._data)
-    def UpdatePlayerKilledBy(self, hazard):
-        for item in self._data["PlayersKilledBy"]:
-            if item['hazard'] == hazard:
-                # If the key exists, increase the counter by 1
-                item['counter'] += 1
-                return
-        self._data["PlayersKilledBy"].append({'hazard': hazard, 'counter': 1})
-        #self._write_data(self._data)
+    @property
+    def TotalPlayersKilled(self):
+        return self._data.get("TotalPlayersKilled")
+    @TotalPlayersKilled.setter
+    def TotalPlayersKilled(self, value):
+        self._data["TotalPlayersKilled"] = value
+    def _updateTotalPlayersKilled(self):
+        total_count = 0
+        for obj in self._data['PlayersKilledBy']:
+            if obj["hazard"] != "Bleeding Out" :
+                total_count += obj["counter"]
+        self._data['TotalPlayersKilled'] = self._data['TotalPlayersKilled'] - total_count
 
     @property
     def GunsMostUsed(self):
@@ -187,11 +199,7 @@ class Statistics:
         self._data["GunsMostUsed"].append({'gun': gun, 'counter': 1})
         #self._write_data(self._data)
 
-    def _updateTotalPlayersKilled(self):
-        total_count = 0
-        for obj in self._data['PlayersKilledBy']:
-            total_count += obj["counter"]
-        self._data['TotalUniquePlayerDeaths'] = total_count
+
     def to_json(self):
         return json.dumps({'Created': self.Created.strftime("%d-%m-%Y"), 'LastEdit': self.LastEdit.strftime("%d-%m-%Y"), 'TotalUniqueLogins': self.TotalUniqueLogins,'PlayersLoggedIn':  self.PlayersLoggedIn, 'TotalUniquePlayerDeaths': self.TotalPlayersKilled ,'PlayersKilledBy': self.PlayersKilledBy, 'GunsMostUsed': self.GunsMostUsed })
-    
+

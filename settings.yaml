@@ -1,0 +1,11 @@
+logging:
+  file_path: "/communityZ"
+
+ban:
+  file_path: "test"
+  back_file_path:
+
+discord:
+  channel_id:
+    bot_log: 1216711729723998248 #"786607495413891113"
+    

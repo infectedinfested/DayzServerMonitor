@@ -1,91 +1,156 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify, Response
 from threading import Thread
+from flask_httpauth import HTTPBasicAuth
+from flask_httpauth import HTTPTokenAuth
 
-import psutil
-import time
 
-
-import sched
+import secrets
 import time
 import json
 import csv
+import sys
+import uuid
+import asyncio
+import hashlib
 
-from common import strtobool, create_ban_file
+
 import scheduledJob
-from  classes import BannedPerson
+from classes import BannedPerson
+from common import strtobool, create_ban_file, p, post_alert
+
+# some_file.py
+# caution: path[0] is reserved for script path (or '' in REPL)
+sys.path.insert(1, 'flows')
+import ban_flow
+
 
 # log location
-logsLocation = "/communityZ"
+logsLocation = p("logging.file_path") 
 
 app = Flask(__name__)
 
+#################################
+# authentication                #
+#################################
 
+auth = HTTPBasicAuth()
+token_auth = HTTPTokenAuth(scheme='Bearer')
+
+
+tokens = {}
+
+# Salted passwords stored in a file
+PASSWORD_FILE = "passwords.txt"
+
+
+# Load passwords from file
+def load_passwords():
+    passwords = {}
+    with open(PASSWORD_FILE, "r") as file:
+        for line in file:
+            username, salt, password_hash = line.strip().split(":")
+            passwords[username] = (salt, password_hash)
+    return passwords
+
+# Verify a password against a hash
+@auth.verify_password
+def verify_password(username, password):
+    passwords = load_passwords()
+
+    if username in passwords:
+        salt, password_hash = passwords[username]
+        return password_hash == hashlib.sha256((password + salt).encode()).hexdigest()
+    return False
+
+# Issue a token after successful basic authentication
+@app.route('/api/authenticate', methods=['POST'])
+@auth.login_required
+def authenticate():
+    username = request.authorization.username
+    token = secrets.token_hex(16)
+    tokens[token] = ({
+            "user":username,
+            "created": time.time()
+        })
+    return jsonify({'token': token}), 200
+
+
+
+# Protect other APIs with token authentication
+@app.route('/api/protected', methods=['GET'])
+@token_auth.login_required
+def protected():
+    if is_token_expired(request.headers.get('Authorization').split()[1]):
+        return jsonify({'message': 'Token expired'}), 401
+    return jsonify({'message': 'Access granted'}), 200
+
+@token_auth.verify_token
+def verify_token(token):
+    if token in tokens:
+        return tokens[token]
+
+# Check if a token has expired
+def is_token_expired(token):
+    print("checking if token is expired")
+    if time.time() - tokens[token]['created'] > 30 * 60:
+        return True
+    else:
+        tokens[token]['created'] = time.time()
+        return False
+
+################################
+
+
+
+# ban endpoints
 @app.route('/api/unban', methods=['GET'])
-def unban_list():
-    scheduledJob.unban()
-    return "test"
+@token_auth.login_required
+async def unban_list():
+    if is_token_expired(request.headers.get('Authorization').split()[1]):
+        return jsonify({'message': 'Token expired'}), 401
+    await post_alert("bot_log","moderator: Scruffy is rerunning the unban script")
+    if request.headers.get('X-Correlation-ID'):
+        return Response(json.dumps(ban_flow.unban(request.headers.get('X-Correlation-ID'))), mimetype='application/json')
+    else:
+        return Response(json.dumps(ban_flow.unban(uuid.uuid4())), mimetype='application/json')
 
+@app.route('/api/unban/<id>', methods=['GET'])
+@token_auth.login_required
+async def get_unbannedPersonById(id):
+    if is_token_expired(request.headers.get('Authorization').split()[1]):
+        return jsonify({'message': 'Token expired'}), 401
+
+    if request.headers.get('X-Correlation-ID'):
+        return Response(json.dumps(ban_flow.unban(request.headers.get('X-Correlation-ID'),id)), mimetype='application/json')
+    else:
+        return Response(json.dumps(ban_flow.unban(uuid.uuid4(),id)), mimetype='application/json')
+    
 
 @app.route('/api/ban', methods=['GET'])
-def get_ban_list():
+@token_auth.login_required
+async def get_ban_list():
+    if is_token_expired(request.headers.get('Authorization').split()[1]):
+        return jsonify({'message': 'Token expired'}), 401
+
+    await post_alert("bot_log","moderator: Scruffy is retrieving the ban list")
     filtered = request.args.get('showAll')
-    BannedPeople = []
-    with open('DayZServerBackup20220728/ban.csv', 'r') as file:
-        reader = csv.DictReader(file)
-        
-        for row in reader:
-            bannedPerson = BannedPerson(row['steamid'], row['reason'], row['time'], row['startDate'], row['comment'], row['uniqueid'], strtobool(row['active']))
-            BannedPeople.append(bannedPerson)
-
-        if filtered !="True":
-            BannedPeople = [person for person in BannedPeople if person.active]
-
-        json_data = json.dumps([person.__dict__ for person in BannedPeople])
-    return json_data
+    if request.headers.get('X-Correlation-ID'):
+        return Response(json.dumps([person.__dict__ for person in ban_flow.getBanList(request.headers.get('X-Correlation-ID'),filtered).itervalues()]), mimetype='application/json')
+    else:
+        return Response(json.dumps([person.__dict__ for person in ban_flow.getBanList(uuid.uuid4(),filtered)]), mimetype='application/json')
 
 @app.route('/api/ban/transform', methods=['GET'])
 def create_transformed_ban_list():
-    counter = 1
-    return_lines = ""
-    with open('DayZServerBackup20220728/ban.txt', 'r') as file:
-        count=0
-        for line in file:
-            count +=1
-            if count > 9:
-                line = line.replace('\n', '')
-                line = line.split(" // ") + [""]+ [""]+ [""]+ [""]
-                
-                return_lines += (str(counter)+ ","+ 
-                                 str(not line[0].startswith("// ")) +","+  
-                                 line[0].replace('// ', '') +","+
-                                 line[1] +","+ 
-                                 line[2] +","+ 
-                                 line[3] +","+ 
-                                 line[4] + '\n')
-                counter += 1
-
-    return_lines = "uniqueid,active,steamid,reason,time,startDate,comment\n" + return_lines
-    with open('DayZServerBackup20220728/ban.csv', 'w') as file:
-        file.write(return_lines)
-    return "transformation successfull"
-
-
+    if request.headers.get('X-Correlation-ID'):
+        return Response(json.dumps(ban_flow.transform(request.headers.get('X-Correlation-ID'))), mimetype='application/json')
+    else:
+        return Response(json.dumps(ban_flow.transform(uuid.uuid4())), mimetype='application/json')
 
 @app.route('/api/ban', methods=['POST'])
 def post_ban_list():
     data = request.get_json()
-    
-    #body content
-    bannedPerson = BannedPerson(data.get('steamid', ''), data.get('reason', ''), data.get('time', ''), data.get('startDate', ''),data.get('comment', ''))
 
-    with open('DayZServerBackup20220728/ban.csv', 'a', newline='') as file:
-        fieldnames = ['uniqueid','active','steamid','reason','time','startDate','comment']
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-
-        writer.writerow({'uniqueid': bannedPerson.uniqueid, 'active': bannedPerson.active, 'steamid': bannedPerson.steamid, 'reason': bannedPerson.reason, 'time': bannedPerson.time, 'startDate': bannedPerson.startDate, 'comment': bannedPerson.comment  })
-
-        create_ban_file([bannedPerson], 'a')
-    return 'banned person inserted with id:' + str(bannedPerson.uniqueid)
+    return Response(json.dumps( {"message" :'banned person inserted with id:' + str((ban_flow.ban(uuid.uuid4(),data)).uniqueid)}), mimetype='application/json')
 
 
 @app.route('/api/ban/<id>', methods=['GET'])
@@ -133,6 +198,70 @@ def patch_bannedperson_by_id(id):
     return "update successful"
 
 
+
+def _sendAlert(channel, message) -> None:
+    data = request.get_json()
+    asyncio.run(post_alert(data.get('channel', ''), data.get('message', '')))
+
+
+
+# Server status endpoints
+server_status = {
+    'status': 'stopped'
+}
+
+@app.route('/api/server/status', methods=['GET'])
+def get_status():
+    return jsonify(server_status)
+
+@app.route('/api/server/start', methods=['POST'])
+def start_server():
+    # Code to start the DayZ server
+    server_status['status'] = 'running'
+    return jsonify({'message': 'Server started successfully'})
+
+@app.route('/api/server/stop', methods=['POST'])
+def stop_server():
+    # Code to stop the DayZ server
+    server_status['status'] = 'stopped'
+    return jsonify({'message': 'Server stopped successfully'})
+
+@app.route('/api/server/restart', methods=['POST'])
+def restart_server():
+    # Code to stop the DayZ server
+    server_status['status'] = 'restarting'
+    return jsonify({'message': 'Server restarting successfully'})
+
+@app.route('/api/server/update', methods=['POST'])
+def update_server():
+    # Code to update the DayZ server
+    return jsonify({'message': 'Server updated successfully'})
+
+
+# server settings endpoints
+
+'''
+@app.route('/status', methods=['GET'])
+def get_status():
+    return jsonify(server_status)
+
+@app.route('/start', methods=['POST'])
+def start_server():
+    # Code to start the DayZ server
+    server_status['status'] = 'running'
+    return jsonify({'message': 'Server started successfully'})
+
+@app.route('/stop', methods=['POST'])
+def stop_server():
+    # Code to stop the DayZ server
+    server_status['status'] = 'stopped'
+    return jsonify({'message': 'Server stopped successfully'})
+
+@app.route('/update', methods=['POST'])
+def update_server():
+    # Code to update the DayZ server
+    return jsonify({'message': 'Server updated successfully'})
+'''
 
 
 
