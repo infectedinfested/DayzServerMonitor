@@ -43,7 +43,7 @@ paths:
                     - 2m
                     - 3m
                     - 1y
-                    - permanent
+                    - 100y
                   example: 1w
       responses:
         '200':

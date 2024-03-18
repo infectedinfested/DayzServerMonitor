@@ -1,6 +1,8 @@
 from datetime import date, datetime
 import csv
 import json
+from common import p, toBool
+import uuid
 
 
 
@@ -19,35 +21,50 @@ substitude_list = {
 
 class BannedPerson:
     uniqueid= ""
-    active = 1
+    active = False
     steamid = 0
-    reason = ""
+    ticket = ""
     time = ""
     startDate = ""
     comment = ""
 
-    def __init__(self,  steamid, reason, time,  startDate, comment, uniqueid=0, active=0,):
+    def __init__(self,  steamid, ticket, time,  startDate, comment, uniqueid=0, active=False,):
+        if isinstance(active, bool):
+            self.active = active
+        else:
+            self.active = toBool(active)
         if uniqueid == 0:
-            with open('DayZServerBackup20220728/ban.csv', 'r') as csvfile:
+            with open(p("dayz.root")+p("dayz.ban.file_csv_path"), 'r') as csvfile:
                 reader = csv.reader(csvfile)
-                
                 # Read all lines into a list
                 lines = list(reader)
-            uniqueid = int(lines[-1][0])+1
-        if active == 0:
-            active = "True"
+            try:
+                uniqueid = int(lines[-1][0])+1
+            except Exception as e:
+                print(e)
+                uniqueid = int(lines[-2][0])+1
+            self.active = True
+        else:
+            self.uniqueid = uniqueid
+        
 
         self.uniqueid = uniqueid
-        self.active = active
         self.steamid = steamid
-        self.reason = reason
+        self.ticket = ticket
         self.time = time
         self.startDate = startDate
         self.comment = comment
 
     def __str__(self):
-        return f"Id: {self.uniqueid}, active: {self.active}, steamId: {self.steamid}, reason: {self.reason}, time: {self.time},startDate: {self.startDate}, comment: {self.comment}"
+        return f"Id: {self.uniqueid}, active: {toBool(self.active)}, steamId: {self.steamid}, ticket: {self.ticket}, time: {self.time},startDate: {self.startDate}, comment: {self.comment}"
     
+    #@property
+    #def uniqueid(self):
+    #    return self.uniqueid
+    #@uniqueid.setter
+    #def uniqueid(self, value):
+    #    self.uniqueid = value
+
 class Log:
     location = ""
     def __init__(self,  location):
@@ -59,6 +76,50 @@ class Log:
             file.write(str(current_time) + " | " + string)
         return 'write successfull'  
 
+class Error:
+    err = ""
+    descr = ""
+    id = ""
+    statusCode = 500
+    def __init__(self, err,descr = "",id = "", statusCode = 500):
+        self.err = err
+        self.descr = descr
+        self.id = id
+        self.statusCode = statusCode
+        if isinstance(err, Exception):
+            str_err = str(err)
+            start_index = str_err.find("(")
+            end_index = str_err.rfind(")")
+            if not id:
+                id = uuid.uuid4()
+            self.err = str(type(err)).split("'")[1]
+            self.descr = str_err[start_index + 1:end_index],
+        else:
+            self.err = err
+            self.descr = descr
+    def __json__(self):
+        error = {
+                "error": self.err,
+                "description": self.descr,
+                "identifier": self.id
+            }
+        return json.dumps(error)
+    def to_json(self):
+        error = {
+                "error": self.err,
+                "description": self.descr,
+                "identifier": self.id
+            }
+        return json.dumps(error) 
+    def __str__(self):
+        return (f"{self.err}: {self.descr} : {self.id}")
+    
+    @property
+    def statusCode(self):
+        return self.statusCode
+    @statusCode.setter
+    def Created(self, value):
+        self.statusCode = value
 
 
 class Statistics:
