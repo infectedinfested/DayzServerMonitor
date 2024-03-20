@@ -1,11 +1,19 @@
 logging:
   file_path: "/communityZ"
 
-ban:
-  file_path: "test"
-  back_file_path:
+dayz:
+  root: "DayZServerBackup20220728/"
+  log_dir: 'communityZ/'
+  ban:
+    file_path: "ban.txt"
+    file_csv_path: "ban.csv"
+    back_file_path: "ban_backup.txt"
+  settings:
+    file_path: "dayzsettings.xml"
+    back_file_path: "dayzsettings_backup.xml"
 
 discord:
+  guild: "1164838927807561759"
   channel_id:
     bot_log: 1216711729723998248 #"786607495413891113"
     

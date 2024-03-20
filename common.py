@@ -75,4 +75,5 @@ def get_timeDelta(amount):
         case "3m": return timedelta(days=90)
         case "6m": return timedelta(days=182)
         case "1y": return timedelta(days=365)
+        case "perma": return timedelta(days=36500)
         case _: return timedelta(days=36500)
