@@ -145,7 +145,7 @@ def lookup_user(token):
 #########################################
 
 # ban endpoints
-@app.route('/api/unban', methods=['GET'])
+@app.route('/api/server/unban', methods=['GET'])
 @bruteforceChecker
 @token_auth.login_required
 async def unban_list():
@@ -160,7 +160,7 @@ async def unban_list():
     return Response(json.dumps(response), mimetype='application/json')
 
 
-@app.route('/api/unban/<id>', methods=['GET'])
+@app.route('/api/server/unban/<id>', methods=['GET'])
 @bruteforceChecker
 @token_auth.login_required
 async def get_unbannedPersonById(id):
@@ -175,7 +175,7 @@ async def get_unbannedPersonById(id):
     return Response(json.dumps(response), mimetype='application/json')
     
 
-@app.route('/api/ban', methods=['GET'])
+@app.route('/api/server/ban', methods=['GET'])
 @bruteforceChecker
 @token_auth.login_required
 async def get_ban_list():
@@ -194,7 +194,7 @@ async def get_ban_list():
     return Response(json.dumps([person.__dict__ for person in response]), mimetype='application/json')
 
 
-@app.route('/api/ban/transform', methods=['GET'])
+@app.route('/api/server/ban/transform', methods=['GET'])
 @bruteforceChecker
 @token_auth.login_required
 async def create_transformed_ban_list():
@@ -209,7 +209,7 @@ async def create_transformed_ban_list():
     return Response(json.dumps(response), mimetype='application/json')
 
 
-@app.route('/api/ban', methods=['POST'])
+@app.route('/api/server/ban', methods=['POST'])
 @bruteforceChecker
 @token_auth.login_required
 async def post_ban():
@@ -225,7 +225,7 @@ async def post_ban():
     return Response(json.dumps({"message" :'banned person inserted with id: ' + str(data['steamid'])}), mimetype='application/json')
 
 
-@app.route('/api/ban/<id>', methods=['GET'])
+@app.route('/api/server/ban/<id>', methods=['GET'])
 @bruteforceChecker
 @token_auth.login_required
 async def get_bannedperson_by_id(id):
@@ -240,7 +240,7 @@ async def get_bannedperson_by_id(id):
     return Response(json.dumps(response.__dict__), mimetype='application/json')
 
 
-@app.route('/api/ban/<id>', methods=['PATCH'])
+@app.route('/api/server/ban/<id>', methods=['PATCH'])
 @bruteforceChecker
 @token_auth.login_required
 async def patch_bannedperson_by_id(id):
@@ -255,6 +255,8 @@ async def patch_bannedperson_by_id(id):
         return Response(response.to_json(), mimetype='application/json'), response.statusCode()
     # await post_alert("bot_log",f"user: {lookup_user(request.headers.get('Authorization'))} is retrieving the ban list")
     return Response(json.dumps(response.__dict__), mimetype='application/json')
+
+
 
 
 '''
