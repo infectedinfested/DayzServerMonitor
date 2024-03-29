@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime,  timedelta
 import concurrent.futures
 from concurrent import futures
 import os
@@ -8,16 +8,50 @@ import time as timer
 
 import json
 import pandas as pd
+from common import p
+
+from enum import Enum
+
+class Type(Enum):
+    warn = "warn"
+    ban = "ban"
 
 
-from  classes import Statistics
-
-log_dir = 'DayZServerBackup20220728/communityZNew/'
+log_dir = 'communityZNew/'
 # dateToScanFolder = date.today() - timedelta(days=1)
 #to_scan = "2022_06_14"
 typeToScan = ".ADM"
-dateToScan = [date.today()]
+dateToScan = [date.today()- timedelta(days=1)]
 
+def getMaxDistanceByWeapon(weapon: str, type: Type):
+    maxDistance = p("autoMod.maxWeaponDistance.weapons."+ weapon +"."+ str(type.value))
+    if maxDistance:
+        return maxDistance
+    print("autoMod.maxWeaponDistance."+ weapon +"."+ str(type.value))
+    print("no max distance found for:" + weapon)
+    return 1000
+
+def check_within_5_seconds(date_list, maximumOccurance, timespan):
+    def check_dates(dates, maximumOccurance, timespan):
+        if len(dates) < maximumOccurance:
+            return False
+        
+        # Convert string times to datetime objects
+        datetime_dates = [datetime.datetime.strptime(date, '%H:%M:%S') for date in dates]
+        
+        # Sort datetime objects
+        datetime_dates.sort()
+        
+        # Check if there are at least 3 dates within 5 seconds
+        for i in range(len(datetime_dates) - (maximumOccurance-1)):
+            if (datetime_dates[i + (maximumOccurance-1)] - datetime_dates[i]).total_seconds() <= timespan:
+                return True
+        return False
+    for entry in date_list:
+        player_id = list(entry.keys())[0]
+        weapon, dates = list(entry.values())[0].items()[0]
+        has_three_dates_within_5_seconds = check_dates(dates, maximumOccurance, timespan)
+        print(f"ID: {player_id}, Weapon: {weapon}, Has {maximumOccurance} dates within {timespan} seconds: {has_three_dates_within_5_seconds}")
 
 def read_file(file_name):
     print(file_name)
@@ -49,7 +83,7 @@ def parse_log_line(line,filename):
                     player_name = player_pre[1]
                 except Exception as e:
                     print("can't parse line:player_name " + line)
-                    return "can't parse line:player_name " + line
+                    return None
                 if len(player_pre)>2 and player_pre[2].startswith("(DEAD)"):
                     alive = False
                 else:
@@ -58,7 +92,7 @@ def parse_log_line(line,filename):
                     player_id_pos = player_info[1].replace('(','').replace(')','').split(" pos")
                 except Exception as e:
                     print("can't parse line:player_id_pos" + line)
-                    return "can't parse line:player_id_pos" + line
+                    return None
                 player_id = player_id_pos[0][3:]
                 if player_id_pos[1].endswith("]"):
                     player_pos= (player_id_pos[1].split(">["))[0][2:]
@@ -251,6 +285,7 @@ def run():
     filtered_files = []
     for date in dateToScan:
         filtered_files = filtered_files + list(filter(lambda x: str(date.strftime('%Y_%m_%d')) in x and x.endswith(typeToScan), files_in_dir))
+    
     print(filtered_files)
 
     counter = 1
@@ -271,28 +306,57 @@ def run():
     for file in filtered_files:
         json_logData = json_logData + read_file(file)
     
-
+    #print(json_logData)
     with open("LogChecker.json", 'w') as file:
         json.dump(json_logData, file, indent=4)
 
     df = pd.DataFrame(json_logData)
-    weapon_min_distances = {"ak": 200, "sniper": 500, "IJ-70": 2}
 
     filtered_df = df[df['event'].apply(lambda x: x.get('distance') is not None and x.get('distance') > 5)]
 
 
-    filteredByWeapon_df = df[df.apply(lambda row: row['event']['distance'] is not None and row['event']['weapon'] is not None and 
-                           row['event']['distance'] > weapon_min_distances.get(row['event']['weapon'], 0), 
+    filteredByWeaponBan_df = df[df.apply(lambda row: row['event']['distance'] is not None and row['event']['weapon_used'] is not None and 
+                           row['event']['distance'] > getMaxDistanceByWeapon(row['event']['weapon_used'],Type.ban), 
+                           axis=1)]
+    filteredByWeaponWarn_df = df[df.apply(lambda row: row['event']['distance'] is not None and row['event']['weapon_used'] is not None and 
+                           row['event']['distance'] > getMaxDistanceByWeapon(row['event']['weapon_used'],Type.warn), 
                            axis=1)]
 
+    player_shot_counts = []
+    exist = False
+    for i in json_logData:
+        player_id = i['player_id']
+        distance = i['event']['distance']
+        
+        if distance is not None and distance > getMaxDistanceByWeapon(i['event']['weapon_used'],Type.warn):
+            weapon_used = i['event']['weapon_used']
+            for obj in player_shot_counts:
+                exist = True
+                if player_id in obj:
+                    if weapon_used in obj[player_id]:
+                        obj[player_id][weapon_used].append(i['time'])
+                    else:
+                        obj[player_id][weapon_used] = [i['time']]
+                else:
+                    obj[player_id] = {weapon_used: 1}
+            if not exist:
+                player_shot_counts.append({player_id: {weapon_used: [i['time']]}})
+    print(player_shot_counts)
+    for i in player_shot_counts:
+        print()
     # Display the filtered DataFrame
-    print("Filtered DataFrame where 'distance' is not null:")
-    print(filtered_df)
-    print(filteredByWeapon_df)
-    filtered_df.to_json('output.json', orient='records')
-        #print(filtered_list)
+    #print("Filtered DataFrame where the distance is higher than the maximum allowed:")
+    #print(filtered_df)
+    #print(filteredByWeaponBan_df)
+    filteredByWeaponBan_df.to_json('output.json', orient='records')
+    for i in filteredByWeaponBan_df.to_dict(orient='records'):
+        player_id = i['player_id']
+        event = i['event']
+        distance = event['distance']
+        weapon = event['weapon_used']
+        #print(f"Player with id: {player_id}, used weapon {weapon} from distance: {distance}")#print(filtered_list)
     #with open("output.json", 'w') as file:
-    #    json.dump(filtered_df.to_json(orient='records'), file, indent=4)
+    #    json.dump(filteredByWeaponBan_df.to_json(orient='records'), file, indent=4)
     
 
 

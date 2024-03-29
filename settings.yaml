@@ -17,3 +17,36 @@ discord:
   channel_id:
     bot_log: 1216711729723998248 #"786607495413891113"
     
+
+autoMod:
+  maxWeaponDistance:
+    maximumWarnings: 3
+    MaxWarningTimeSpan: 5 #in seconds
+    weapons:
+      #Pistols:
+      IJ-70:
+        warn: 2
+        ban: 80
+      Mlock-91:
+        warn: 50
+        ban: 80
+      Revolver:
+        warn: 50
+        ban: 80
+      Derringer:
+        warn: 30
+        ban: 50
+      #Shotguns:
+      BK-133:
+        warn: 20
+        ban: 50
+      #Submachineguns:
+      #automaticRifles:
+      DMR:
+        warn: 100
+        ban: 200
+      #Snipers:
+      CR-527:
+        warn: 300
+        ban: 800
+
