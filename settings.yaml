@@ -2,8 +2,9 @@ logging:
   file_path: "/communityZ"
 
 dayz:
-  root: "DayZServerBackup20220728/"
-  log_dir: 'communityZ/'
+  root: 'DayZServerBackup20220728/'
+  log_dir: 'communityZNew/'
+  serverDZ: 'serverDZ.cfg'
   ban:
     file_path: "ban.txt"
     file_csv_path: "ban.csv"
@@ -20,33 +21,44 @@ discord:
 
 autoMod:
   maxWeaponDistance:
-    maximumWarnings: 3
-    MaxWarningTimeSpan: 5 #in seconds
+    maxWarningAmount: 3
+    maxWarningTimeSpan: 5 #in seconds
     weapons:
       #Pistols:
       IJ-70:
-        warn: 2
+        interval: 50
         ban: 80
       Mlock-91:
-        warn: 50
+        interval: 50
         ban: 80
       Revolver:
-        warn: 50
+        interval: 50
         ban: 80
       Derringer:
-        warn: 30
-        ban: 50
+        interval: 50
+        ban: 80
+      FX-45:
+        interval: 50
+        ban: 80
       #Shotguns:
       BK-133:
-        warn: 20
+        interval: 30
         ban: 50
       #Submachineguns:
       #automaticRifles:
       DMR:
-        warn: 100
-        ban: 200
+        interval: 100
+        ban: 400
       #Snipers:
       CR-527:
-        warn: 300
-        ban: 800
+        interval: 100
+        ban: 10000
+        maximumWarnings: 2
+        MaxWarningTimeSpan: 3 #in seconds
+      Blaze:
+        interval: 100
+        ban: 10000
+        maximumWarnings: 3
+        MaxWarningTimeSpan: 5 #in seconds
+
 

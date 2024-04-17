@@ -1,57 +1,102 @@
 from datetime import date, datetime,  timedelta
-import concurrent.futures
-from concurrent import futures
+import requests
 import os
-from tqdm import tqdm
 import re
-import time as timer
+import yaml
 
 import json
 import pandas as pd
-from common import p
 
 from enum import Enum
 
 class Type(Enum):
-    warn = "warn"
+    interval = "interval"
     ban = "ban"
 
+def p(path):
+    path = path.split(".")
+    with open("settings.yaml", 'r') as f:
+        try:
+            settings = yaml.safe_load(f)
+            for i in path:
+                settings = settings.get(i)
+            f.close()
+            return settings
+            
+        except Exception as e:
+            f.close()
+            return False
 
-log_dir = 'communityZNew/'
+
+log_dir = p('dayz.root')+p('dayz.log_dir')
 # dateToScanFolder = date.today() - timedelta(days=1)
 #to_scan = "2022_06_14"
 typeToScan = ".ADM"
-dateToScan = [date.today()- timedelta(days=1)]
+dateToScan = [date.today()- timedelta(days=3)]
+printLines = []
+
+
 
 def getMaxDistanceByWeapon(weapon: str, type: Type):
-    maxDistance = p("autoMod.maxWeaponDistance.weapons."+ weapon +"."+ str(type.value))
-    if maxDistance:
-        return maxDistance
-    print("autoMod.maxWeaponDistance."+ weapon +"."+ str(type.value))
-    print("no max distance found for:" + weapon)
-    return 1000
+    try:
+        maxDistance = p("autoMod.maxWeaponDistance.weapons."+ weapon +"."+ str(type.value))
+        if maxDistance:
+            return maxDistance
+        return 10000
+    except Exception as e:
+        print("autoMod.maxWeaponDistance."+ weapon +"."+ str(type.value))
+        print("no max distance found for:" + weapon)
+        return 10000
+
+
+def weaponExists(weapon: str):
+    print(weapon)
+    value = p("autoMod.maxWeaponDistance.weapons."+ weapon)
+    if value: 
+        return True
+    return False
 
 def check_within_5_seconds(date_list, maximumOccurance, timespan):
+
+    try:
+        newMaxOccurance = p("autoMod.maxWeaponDistance.weapons."+ weapon +".maxWarningAmount")
+        if newMaxOccurance:
+            maximumOccurance = newMaxOccurance
+        newTimespan = p("autoMod.maxWeaponDistance.weapons."+ weapon +".maxWarningTimeSpan")
+        if newTimespan:
+            timespan = newTimespan
+    except Exception as e:
+        print("no custom values found")
+
     def check_dates(dates, maximumOccurance, timespan):
         if len(dates) < maximumOccurance:
             return False
         
         # Convert string times to datetime objects
-        datetime_dates = [datetime.datetime.strptime(date, '%H:%M:%S') for date in dates]
+        datetime_dates = [datetime.strptime(date, '%H:%M:%S') for date in dates]
         
         # Sort datetime objects
         datetime_dates.sort()
         
         # Check if there are at least 3 dates within 5 seconds
         for i in range(len(datetime_dates) - (maximumOccurance-1)):
+            tim = (datetime_dates[i + (maximumOccurance-1)] - datetime_dates[i]).total_seconds()
+            print(tim)
+            print(timespan)
+            print(tim <= timespan)
             if (datetime_dates[i + (maximumOccurance-1)] - datetime_dates[i]).total_seconds() <= timespan:
                 return True
         return False
-    for entry in date_list:
-        player_id = list(entry.keys())[0]
-        weapon, dates = list(entry.values())[0].items()[0]
+    player_id = next(iter(date_list.keys()))
+
+    for wpnEntry in next(iter(date_list.values())):
+        weapon = next(iter(wpnEntry))
+        dates = wpnEntry[weapon]
+        distance = getMaxDistanceByWeapon(weapon,Type.interval)
         has_three_dates_within_5_seconds = check_dates(dates, maximumOccurance, timespan)
-        print(f"ID: {player_id}, Weapon: {weapon}, Has {maximumOccurance} dates within {timespan} seconds: {has_three_dates_within_5_seconds}")
+        if has_three_dates_within_5_seconds:
+            printLines.append(f"ID: {player_id}, Weapon: {weapon}, Has {maximumOccurance} hits lower than {distance} meters within {timespan} seconds. Banning!")
+            #print(f"ID: [REDACTED], Weapon: {weapon}, Has {maximumOccurance} hits lower than {distance} meters within {timespan} seconds. Banning!")
 
 def read_file(file_name):
     print(file_name)
@@ -77,38 +122,20 @@ def parse_log_line(line,filename):
             if ((len(line) > 120)):
                 splitted_log = splitted_log + ['']
                 time = splitted_log[0].replace(" ","")
-                player_info = (splitted_log[1].replace('(id=','|(id=')).split('|')
-                player_pre = player_info[0].replace(' "',' |').replace('" ','|').split('|')
-                try:
-                    player_name = player_pre[1]
-                except Exception as e:
-                    print("can't parse line:player_name " + line)
-                    return None
-                if len(player_pre)>2 and player_pre[2].startswith("(DEAD)"):
-                    alive = False
+                matches = re.match(r' player\s+(.*?)\s+\(id=([^ ]+) pos=<([^>]+)>\)(?:\[HP:\s*([\d.]+)\])?', splitted_log[1])
+                print(matches)
+                print(line)
+                if matches:
+                    player_name = matches.group(1)
+                    player_id = matches.group(2)
+                    player_pos = matches.group(3)
+                    player_hp = float(matches.group(4)) if matches.group(4) else 100
                 else:
-                    alive = True
-                try:
-                    player_id_pos = player_info[1].replace('(','').replace(')','').split(" pos")
-                except Exception as e:
-                    print("can't parse line:player_id_pos" + line)
                     return None
-                player_id = player_id_pos[0][3:]
-                if player_id_pos[1].endswith("]"):
-                    player_pos= (player_id_pos[1].split(">["))[0][2:]
-                    player_hp = (player_id_pos[1].split(">["))[1][4:-1]
-                else:
-                    player_pos = player_id_pos[0]
-                    player_hp = "100"
+                print(player_name)
                 
                 log_data = splitted_log[2][1:]
                 hit_by_what = log_data
-                #for string in check_list:
-                #    # Check if the current string exists in the given string
-                #    if string in line:
-                #        print(splitted_log[3][1:].split()[1])
-                #        print(splitted_log[3][1:])
-                #        break  # Exit the loop as soon as a match is found
                 if log_data.startswith("killed by"):
                     if log_data.startswith("killed by Player"):
                         hit_by_what = "Player"
@@ -280,29 +307,14 @@ def fill_statistics(file,fileName):
     
     
 def run():
-    print("TEST")
     files_in_dir = os.listdir(log_dir)
     filtered_files = []
     for date in dateToScan:
         filtered_files = filtered_files + list(filter(lambda x: str(date.strftime('%Y_%m_%d')) in x and x.endswith(typeToScan), files_in_dir))
+
     
-    print(filtered_files)
-
-    counter = 1
-
-    # Create a ThreadPoolExecutor with max_workers set to the number of files you want to process concurrently
-    '''
-    with tqdm(total=len(filtered_files), unit='files') as bar:
-        with futures.ProcessPoolExecutor() as pool:
-            # Add every asset to a thread pool for processing
-            fut = [pool.submit(read_file,statistic, file_name) for file_name in filtered_files]
-            for r in futures.as_completed(fut):
-                bar.update(counter)
-
-    print("handled " + str(len(filtered_files)) + " logsFiles")
-    #print(result)
-    '''
     json_logData = []
+    #for file in [filtered_files[-1]]:
     for file in filtered_files:
         json_logData = json_logData + read_file(file)
     
@@ -314,50 +326,69 @@ def run():
 
     filtered_df = df[df['event'].apply(lambda x: x.get('distance') is not None and x.get('distance') > 5)]
 
-
+    # check hit on max distance for weapon BAN
     filteredByWeaponBan_df = df[df.apply(lambda row: row['event']['distance'] is not None and row['event']['weapon_used'] is not None and 
                            row['event']['distance'] > getMaxDistanceByWeapon(row['event']['weapon_used'],Type.ban), 
                            axis=1)]
+    # check hit on max distance for weapon interval
     filteredByWeaponWarn_df = df[df.apply(lambda row: row['event']['distance'] is not None and row['event']['weapon_used'] is not None and 
-                           row['event']['distance'] > getMaxDistanceByWeapon(row['event']['weapon_used'],Type.warn), 
+                           row['event']['distance'] > getMaxDistanceByWeapon(row['event']['weapon_used'],Type.interval), 
                            axis=1)]
 
     player_shot_counts = []
     exist = False
     for i in json_logData:
-        player_id = i['player_id']
-        distance = i['event']['distance']
-        
-        if distance is not None and distance > getMaxDistanceByWeapon(i['event']['weapon_used'],Type.warn):
-            weapon_used = i['event']['weapon_used']
-            for obj in player_shot_counts:
-                exist = True
-                if player_id in obj:
-                    if weapon_used in obj[player_id]:
-                        obj[player_id][weapon_used].append(i['time'])
+        if i['event']['distance'] and i['event']['weapon_used'] and i['event']['hit_by_whom']:
+            
+            #player_id = i['event']['hit_by_whom']
+            player_id = i['player_id']
+            distance = i['event']['distance']
+            weapon_used= i['event']['weapon_used']
+            if not weaponExists(weapon_used):
+                global printLines
+                printLines.append("no max distance found for: " + weapon_used)
+            if distance is not None and distance > getMaxDistanceByWeapon(weapon_used,Type.interval):
+                exist = False
+                for obj in player_shot_counts:
+                    exist = True
+                    if player_id in obj:
+                        if weapon_used in obj[player_id][0]:
+                            for wpn in obj[player_id]:
+                                wpn[weapon_used].append(i['time'])
+                        else:
+                            for wpn in obj[player_id]:
+                                wpn[weapon_used] = [i['time']]
                     else:
-                        obj[player_id][weapon_used] = [i['time']]
-                else:
-                    obj[player_id] = {weapon_used: 1}
-            if not exist:
-                player_shot_counts.append({player_id: {weapon_used: [i['time']]}})
+                        player_shot_counts.append({player_id: [{weapon_used: [i['time']]}]})
+                if not exist:
+                    player_shot_counts.append({player_id: [{weapon_used: [i['time']]}]})
     print(player_shot_counts)
-    for i in player_shot_counts:
-        print()
-    # Display the filtered DataFrame
-    #print("Filtered DataFrame where the distance is higher than the maximum allowed:")
-    #print(filtered_df)
-    #print(filteredByWeaponBan_df)
+    print("----------------------------------------------------------------")
+    for player in player_shot_counts:
+        check_within_5_seconds(player,p('autoMod.maxWeaponDistance.maxWarningAmount'),p('autoMod.maxWeaponDistance.maxWarningTimeSpan'))
+
     filteredByWeaponBan_df.to_json('output.json', orient='records')
     for i in filteredByWeaponBan_df.to_dict(orient='records'):
         player_id = i['player_id']
         event = i['event']
         distance = event['distance']
         weapon = event['weapon_used']
-        #print(f"Player with id: {player_id}, used weapon {weapon} from distance: {distance}")#print(filtered_list)
-    #with open("output.json", 'w') as file:
-    #    json.dump(filteredByWeaponBan_df.to_json(orient='records'), file, indent=4)
+        #print(f"ID: [REDACTED], Weapon: {weapon} hit from distance: {distance}. Banning!")
+        printLines.append(f"ID: {player_id}, Weapon: {weapon} hit from distance: {distance}. Banning!")
     
-
-
+    printLines = list(set(printLines))
+    if printLines:
+        message = '\n- '.join(printLines)
+        message = f"Server restarted, a rapport got generated from following file: {filtered_files[-1]}\n- " + message
+    else: 
+        message = f"Server restarted, a rapport got generated from following file: {filtered_files[-1]}\n- No sus behavior found"
+    payload = {"channel": "autoMod-log", "message":message}
+    print(message)
+    response = requests.post("http://127.0.0.1:5000/api/discord/send", json=payload)
+    if response.status_code == 200:
+        print("POST request was successful!")
+        print("Response:", response.json())
+    else:
+        print("POST request failed with status code:", response.status_code)
+    
 run()
