@@ -32,7 +32,7 @@ log_dir = p('dayz.root')+p('dayz.log_dir')
 # dateToScanFolder = date.today() - timedelta(days=1)
 #to_scan = "2022_06_14"
 typeToScan = ".ADM"
-dateToScan = [date.today()- timedelta(days=3)]
+dateToScan = [date.today()]
 printLines = []
 
 
@@ -364,9 +364,10 @@ def run():
                     player_shot_counts.append({player_id: [{weapon_used: [i['time']]}]})
     print(player_shot_counts)
     print("----------------------------------------------------------------")
+    # checking iterative distance
     for player in player_shot_counts:
         check_within_5_seconds(player,p('autoMod.maxWeaponDistance.maxWarningAmount'),p('autoMod.maxWeaponDistance.maxWarningTimeSpan'))
-
+    # checking max distance 
     filteredByWeaponBan_df.to_json('output.json', orient='records')
     for i in filteredByWeaponBan_df.to_dict(orient='records'):
         player_id = i['player_id']
@@ -375,14 +376,53 @@ def run():
         weapon = event['weapon_used']
         #print(f"ID: [REDACTED], Weapon: {weapon} hit from distance: {distance}. Banning!")
         printLines.append(f"ID: {player_id}, Weapon: {weapon} hit from distance: {distance}. Banning!")
-    
+
+
+    # checking combat log
+    monitorList = []
+    reverted_logData = json_logData[::-1]
+    for log in reverted_logData:
+        def is_time_within_x_minutes(monitorList,target_id, target_time):
+            for item in monitorList:
+                if item['id'] == target_id:
+                    stored_time = datetime.strptime(item['time'], '%H:%M:%S')
+                    target_time = datetime.strptime(target_time, '%H:%M:%S')
+                    time_difference = abs(target_time - stored_time)
+                    if time_difference <= timedelta(minutes=p('autoMod.combatlogTimeMinutes')):
+                        return True
+                    else:
+                        monitorList.remove(item)
+                        return False
+            return False
+        def remove_item_by_id(monitorList,target_id):
+            monitorList[:] = [item for item in monitorList if item['id'] != target_id]
+
+        if log['event']['other'] == "disconnected":
+            monitorList.append({"id": log['player_id'], "time": log['time']})
+        if log['event']['other'] == "connected":
+            remove_item_by_id(monitorList,log['player_id'])
+
+        if log['hp'] is not None and log['hp'] < 1:
+            remove_item_by_id(monitorList,log['player_id'])
+        if log['event']['hit_by_whom']:
+            if is_time_within_x_minutes(monitorList,log['event']['hit_by_whom']['player_id'],log['time']):
+                printLines.append(f"{log['time']} ID: {log['event']['hit_by_whom']['player_id']}, combat logged. Banning!")
+            if is_time_within_x_minutes(monitorList,log['player_id'],log['time']):
+                printLines.append(f"{log['time']} ID: {log['player_id']}, combat logged. Banning!")
+
+
+
+
+
+
+
     printLines = list(set(printLines))
     if printLines:
         message = '\n- '.join(printLines)
         message = f"Server restarted, a rapport got generated from following file: {filtered_files[-1]}\n- " + message
     else: 
         message = f"Server restarted, a rapport got generated from following file: {filtered_files[-1]}\n- No sus behavior found"
-    payload = {"channel": "autoMod-log", "message":message}
+    payload = {"channel": "automod-log", "message":message}
     print(message)
     response = requests.post("http://127.0.0.1:5000/api/discord/send", json=payload)
     if response.status_code == 200:

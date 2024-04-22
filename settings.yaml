@@ -20,6 +20,7 @@ discord:
     
 
 autoMod:
+  combatlogTimeMinutes: 15
   maxWeaponDistance:
     maxWarningAmount: 3
     maxWarningTimeSpan: 5 #in seconds
